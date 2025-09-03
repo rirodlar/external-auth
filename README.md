@@ -100,3 +100,32 @@ external.auth.auth-value = Bearer XXXXXX
 external.auth.auto-create-eperson = true
 external.auth.email-domain-fallback = usach.cl
 ```
+
+
+###  authentication-external.xml       
+
+/dspace/config/spring/api
+```
+<?xml version="1.0" encoding="UTF-8"?>
+<beans xmlns="http://www.springframework.org/schema/beans"
+       xmlns:util="http://www.springframework.org/schema/util"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xsi:schemaLocation="
+        http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans.xsd
+        http://www.springframework.org/schema/util  http://www.springframework.org/schema/util/spring-util.xsd">
+
+    <!-- Tu autenticador -->
+    <bean id="externalAuthMethod" class="com.usach.auth.ExternalApiAuthentication"/>
+
+    <!-- Declarar explícitamente el bean de PasswordAuthentication en el contexto REST -->
+    <bean id="org.dspace.authenticate.PasswordAuthentication"
+          class="org.dspace.authenticate.PasswordAuthentication"/>
+
+    <!-- Orden de autenticación -->
+    <util:list id="plugin.sequence.org.dspace.authenticate.AuthenticationMethod">
+        <ref bean="externalAuthMethod"/>
+        <ref bean="org.dspace.authenticate.PasswordAuthentication"/>
+    </util:list>
+</beans>
+```
+
