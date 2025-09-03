@@ -1,0 +1,13 @@
+
+---
+
+## 📄 .gitignore
+```gitignore
+/target/
+.idea/
+.project
+.classpath
+.settings/
+*.iml
+.DS_Store
+

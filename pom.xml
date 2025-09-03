@@ -1,0 +1,39 @@
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/maven-v4_0_0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <groupId>cl.usach.dspace</groupId>
+  <artifactId>external-auth</artifactId>
+  <version>1.0.1</version>
+  <packaging>jar</packaging>
+
+  <name>External Authentication Plugin for DSpace</name>
+
+  <properties>
+    <maven.compiler.source>11</maven.compiler.source>
+    <maven.compiler.target>11</maven.compiler.target>
+  </properties>
+
+  <dependencies>
+    <dependency>
+      <groupId>org.dspace</groupId>
+      <artifactId>dspace-api</artifactId>
+      <version>7.6.1</version>
+      <scope>provided</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.dspace</groupId>
+      <artifactId>dspace-services</artifactId>
+      <version>7.6.1</version>
+      <scope>provided</scope>
+    </dependency>
+    <dependency>
+      <groupId>com.fasterxml.jackson.core</groupId>
+      <artifactId>jackson-databind</artifactId>
+      <version>2.15.4</version>
+      <scope>provided</scope>
+    </dependency>
+  </dependencies>
+</project>
+
