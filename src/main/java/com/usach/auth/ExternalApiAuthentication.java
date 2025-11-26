@@ -76,8 +76,7 @@ public class ExternalApiAuthentication implements AuthenticationMethod {
 
             HttpClient client = buildHttpClient(insecure, timeoutMs);
 
-            // Construcción de request (no loggeamos password ni body completo)
-            String basic = Base64.getEncoder()
+            String basic = java.util.Base64.getEncoder()
                     .encodeToString((apiUser + ":" + apiPass).getBytes(StandardCharsets.UTF_8));
             String payload = "{\"user\":\"" + escape(username) + "\",\"password\":\"" + escape(password) + "\"}";
 
@@ -85,7 +84,7 @@ public class ExternalApiAuthentication implements AuthenticationMethod {
                     .uri(URI.create(apiUrl))
                     .timeout(Duration.ofMillis(timeoutMs))
                     .header("Content-Type", "application/json")
-                    .header("Authorization", "Basic " + "[REDACTED]") // header sensible en logs
+                    .header("Authorization", "Basic " + basic) // <-- CORRECTO: se envía el token real
                     .POST(HttpRequest.BodyPublishers.ofString(payload, StandardCharsets.UTF_8))
                     .build();
 

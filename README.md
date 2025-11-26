@@ -29,7 +29,7 @@ El plugin utiliza las siguientes propiedades de configuración en dspace.cfg:
 
 ```md
 # URL de la API externa para autenticación
-authentication.external.api.url = https://cuentas.segic.cl/api/cuenta/check
+authentication.external.api.url = https://datosqa.usach.cl/api/cuenta/check
 
 # Credenciales para la API externa
 authentication.external.api.username = dspace_client
@@ -47,6 +47,11 @@ authentication.external.email_fallback_domain = usach.cl
 
 # Mapeo de tipos de usuario a grupos DSpace
 authentication.external.tipo_to_group = ACADEMICO=Académicos,ESTUDIANTE=Estudiantes
+
+#Importante
+plugin.sequence.org.dspace.authenticate.AuthenticationMethod = \
+com.usach.auth.ExternalApiAuthentication, \
+org.dspace.authenticate.PasswordAuthentication
 
 ```
 
@@ -128,4 +133,13 @@ external.auth.email-domain-fallback = usach.cl
     </util:list>
 </beans>
 ```
+
+sshpass -p 'uP$I930L9sPA' scp ./external-auth-1.0.1.jar \
+useradmin@158.170.66.162:/tmp/
+
+cd /tmp
+
+sudo cp external-auth-1.0.1.jar  /var/lib/tomcat9/webapps/server/WEB-INF/lib/
+
+QA = uP$I930L9sPA
 
