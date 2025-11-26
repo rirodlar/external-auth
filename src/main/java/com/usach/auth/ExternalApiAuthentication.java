@@ -48,6 +48,23 @@ public class ExternalApiAuthentication implements AuthenticationMethod {
     private static final Pattern EMAIL_RX =
             Pattern.compile("^[A-Z0-9._%+-]+@[A-Z0-9.-]+\\.[A-Z]{2,}$", Pattern.CASE_INSENSITIVE);
 
+    // TODO: mover a configuración (propiedades) antes de pasar a producción.
+    // Constantes temporales para la API de nombres (Udatos)
+    private static final String NAMES_API_LOGIN_URL = "https://udatos.dei.usach.cl/api/login"; // TODO externalizar
+    private static final String NAMES_API_LOGIN_USERNAME = "vriic-academicos-api"; // TODO externalizar
+    private static final String NAMES_API_LOGIN_PASSWORD = "query4paper"; // TODO externalizar (secreto)
+    private static final String NAMES_API_DATA_URL = "https://udatos.dei.usach.cl/api/vriic-academicos-api"; // TODO externalizar
+
+    // Contenedor simple para nombres provenientes del servicio externo
+    private static class NameInfo {
+        final String firstName;
+        final String lastName;
+        NameInfo(String firstName, String lastName) {
+            this.firstName = firstName;
+            this.lastName = lastName;
+        }
+    }
+
     @Override
     public int authenticate(Context context, String username, String password, String realm, HttpServletRequest request)
             throws SQLException {
@@ -123,6 +140,7 @@ public class ExternalApiAuthentication implements AuthenticationMethod {
             JsonNode data = root.has("data") ? root.get("data") : mapper.createObjectNode();
             String apiUserName = data.hasNonNull("user") ? data.get("user").asText() : username;
             String tipo = data.hasNonNull("tipo") ? data.get("tipo").asText() : null;
+            String rut = data.hasNonNull("rut") ? data.get("rut").asText() : null;
 
             String email = resolveEmail(apiUserName);
             log.debug("[{}] Usuario API resuelto: apiUserName='{}', email='{}', tipo='{}'", reqId, safeUser(apiUserName), email, tipo);
@@ -146,14 +164,37 @@ public class ExternalApiAuthentication implements AuthenticationMethod {
                     log.info("[{}] EPerson re-habilitado para login: email='{}'", reqId, email);
                 }
 
-                // nombres si vienen en el JSON
-                if (data.hasNonNull("firstName")) {
-                    ep.setFirstName(context, data.get("firstName").asText());
-                    log.debug("[{}] firstName seteado para '{}'", reqId, email);
+                // Nombres desde servicio externo por RUT, con fallback a lo que venga en el JSON de autenticación
+                boolean apiFirstApplied = false;
+                boolean apiLastApplied = false;
+                try {
+                    if (!isBlank(rut)) {
+                        NameInfo ni = fetchNamesByRut(rut, reqId, timeoutMs);
+                        if (ni != null) {
+                            if (!isBlank(ni.firstName)) {
+                                ep.setFirstName(context, ni.firstName);
+                                apiFirstApplied = true;
+                                log.debug("[{}] firstName seteado (API nombres) para '{}'", reqId, email);
+                            }
+                            if (!isBlank(ni.lastName)) {
+                                ep.setLastName(context, ni.lastName);
+                                apiLastApplied = true;
+                                log.debug("[{}] lastName seteado (API nombres) para '{}'", reqId, email);
+                            }
+                        }
+                    }
+                } catch (Exception exNames) {
+                    log.warn("[{}] No se pudieron obtener nombres por RUT desde API externa: {}", reqId, exNames.toString());
                 }
-                if (data.hasNonNull("lastName")) {
+
+                // Fallback: si no se pudieron setear desde API por RUT, usar los campos originales si existen
+                if (!apiFirstApplied && data.hasNonNull("firstName")) {
+                    ep.setFirstName(context, data.get("firstName").asText());
+                    log.debug("[{}] firstName seteado (fallback JSON auth) para '{}'", reqId, email);
+                }
+                if (!apiLastApplied && data.hasNonNull("lastName")) {
                     ep.setLastName(context, data.get("lastName").asText());
-                    log.debug("[{}] lastName seteado para '{}'", reqId, email);
+                    log.debug("[{}] lastName seteado (fallback JSON auth) para '{}'", reqId, email);
                 }
 
                 ePersonService.update(context, ep);
@@ -199,6 +240,76 @@ public class ExternalApiAuthentication implements AuthenticationMethod {
             log.error("[{}] NO_SUCH_USER por excepción inesperada: {}", reqId, e.toString(), e);
             return NO_SUCH_USER;
         }
+    }
+
+    /**
+     * Consulta el servicio de Udatos para obtener los nombres y primer apellido a partir del RUT.
+     * Proceso:
+     * 1) Login (POST JSON) para obtener token: property authentication.external.names.api.login.url,
+     *    credenciales en authentication.external.names.api.login.username/password
+     * 2) Consulta datos (POST JSON) con Authorization: Bearer <token> a
+     *    authentication.external.names.api.data.url enviando {"rut":"<rut>"}
+     * Devuelve NameInfo con firstName = campo "nombres" y lastName = campo "primerapellido".
+     */
+    private NameInfo fetchNamesByRut(String rut, String reqId, int timeoutMs) throws Exception {
+        if (isBlank(rut)) return null;
+
+        boolean insecure = config.getBooleanProperty("authentication.external.api.insecure_tls", false);
+        HttpClient client = buildHttpClient(insecure, timeoutMs);
+
+        // 1) Login para obtener token
+        String loginUrl = NAMES_API_LOGIN_URL; // TODO: usar configuración
+        String loginUser = NAMES_API_LOGIN_USERNAME; // TODO: usar configuración
+        String loginPass = NAMES_API_LOGIN_PASSWORD; // TODO: usar configuración
+
+        String loginBody = "{\"username\":\"" + escape(loginUser) + "\",\"password\":\"" + escape(loginPass) + "\"}";
+        HttpRequest loginReq = HttpRequest.newBuilder()
+                .uri(URI.create(loginUrl))
+                .timeout(Duration.ofMillis(timeoutMs))
+                .header("Content-Type", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString(loginBody, StandardCharsets.UTF_8))
+                .build();
+
+        log.debug("[{}] NAMES-API -> POST login {}", reqId, loginUrl);
+        HttpResponse<String> loginResp = client.send(loginReq, HttpResponse.BodyHandlers.ofString());
+        if (loginResp.statusCode() != 200) {
+            log.warn("[{}] NAMES-API login falló. status={}", reqId, loginResp.statusCode());
+            return null;
+        }
+        JsonNode loginJson = mapper.readTree(loginResp.body());
+        if (!loginJson.hasNonNull("token")) {
+            log.warn("[{}] NAMES-API login: no vino 'token' en la respuesta", reqId);
+            return null;
+        }
+        String token = loginJson.get("token").asText();
+
+        // 2) Consulta de datos por RUT
+        String dataUrl = NAMES_API_DATA_URL; // TODO: usar configuración
+        String dataBody = "{\"rut\":\"" + escape(rut) + "\"}";
+        HttpRequest dataReq = HttpRequest.newBuilder()
+                .uri(URI.create(dataUrl))
+                .timeout(Duration.ofMillis(timeoutMs))
+                .header("Content-Type", "application/json")
+                .header("Authorization", "Bearer " + token)
+                .POST(HttpRequest.BodyPublishers.ofString(dataBody, StandardCharsets.UTF_8))
+                .build();
+
+        log.debug("[{}] NAMES-API -> POST {} (rut={})", reqId, dataUrl, rut);
+        HttpResponse<String> dataResp = client.send(dataReq, HttpResponse.BodyHandlers.ofString());
+        if (dataResp.statusCode() != 200) {
+            log.warn("[{}] NAMES-API datos falló. status={}", reqId, dataResp.statusCode());
+            return null;
+        }
+        JsonNode dataJson = mapper.readTree(dataResp.body());
+
+        String nombres = dataJson.hasNonNull("nombres") ? dataJson.get("nombres").asText() : null;
+        String primerApellido = dataJson.hasNonNull("primerapellido") ? dataJson.get("primerapellido").asText() : null;
+
+        if (isBlank(nombres) && isBlank(primerApellido)) {
+            log.debug("[{}] NAMES-API: sin datos de nombres para rut={}", reqId, rut);
+            return null;
+        }
+        return new NameInfo(nombres, primerApellido);
     }
 
     // ===== Métodos requeridos por AuthenticationMethod =====
